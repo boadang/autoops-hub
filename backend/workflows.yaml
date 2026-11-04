@@ -1,0 +1,10 @@
+version: "1.0"
+workflows:
+  - id: 1
+    name: "System Health Check & Network Ping"
+    command: "ping"
+    args: ["127.0.0.1"]
+  - id: 2
+    name: "Check Go Version Environment"
+    command: "go"
+    args: ["version"]
