@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"os/exec"
 	"runtime"
 	"sync"
@@ -16,7 +18,11 @@ type ServerTarget struct {
 	Host string
 }
 
+// RunScanServers thực thi tiến trình quét hệ thống bằng Worker Pool
 func RunScanServers(timeout time.Duration) {
+	// Khởi tạo slog logger (có thể cấu hình JSONHandler cho production, ở đây dùng TextHandler cho terminal)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -24,7 +30,7 @@ func RunScanServers(timeout time.Duration) {
 	start := time.Now()
 	dbManager, err := storage.NewDBManager("autoops.db")
 	if err != nil {
-		fmt.Printf("❌ Không thể kết nối SQLite: %v\n", err)
+		logger.Error("Không thể kết nối SQLite", slog.Any("error", err))
 		return
 	}
 	defer dbManager.Conn.Close()
@@ -43,11 +49,12 @@ func RunScanServers(timeout time.Duration) {
 	resultsCh := make(chan TaskResult, len(servers))
 	var wg sync.WaitGroup
 
-	for i := 0; i < 2; i++ {
+	numWorkers := 2
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			workerTask(ctx, workerID, jobsCh, resultsCh)
+			workerTask(ctx, workerID, jobsCh, resultsCh, logger)
 		}(i + 1)
 	}
 
@@ -56,23 +63,34 @@ func RunScanServers(timeout time.Duration) {
 	}
 	close(jobsCh)
 
+	// Lắng nghe và đợi các worker hoàn tất để đóng kênh kết quả
 	go func() {
 		wg.Wait()
 		close(resultsCh)
 	}()
 
+	// Thu thập kết quả và lưu vào SQLite
 	for result := range resultsCh {
-		fmt.Printf("[Kết quả] Server %s -> Thành công: %v (Thời gian: %v)\n", result.Name, result.Success, result.Elapsed)
-		if err := dbManager.SaveExecutionResult(result.TaskID, result.Name, result.Output, result.Error, result.Elapsed); err != nil {
-			fmt.Printf("⚠️ Lỗi khi lưu log vào DB cho server %s: %v\n", result.Name, err)
+		logger.Info("Nhận kết quả thực thi task",
+			slog.String("server", result.Name),
+			slog.Bool("success", result.Success),
+			slog.Duration("elapsed", result.Elapsed),
+		)
+
+		if dbErr := dbManager.SaveExecutionResult(result.TaskID, result.Name, result.Output, result.Error, result.Elapsed); dbErr != nil {
+			logger.Error("Lỗi khi lưu log vào DB",
+				slog.String("server", result.Name),
+				slog.Any("error", dbErr),
+			)
 		}
 	}
 
-	fmt.Println("✅ Đã hoàn tất toàn bộ tiến trình và lưu lịch sử vào SQLite thành công!")
-	fmt.Println("Total time running: ", time.Since(start))
+	logger.Info("Đã hoàn tất toàn bộ tiến trình quét và lưu lịch sử vào SQLite thành công",
+		slog.Duration("total_duration", time.Since(start)),
+	)
 }
 
-func workerTask(ctx context.Context, id int, jobsCh <-chan ServerTarget, resultsCh chan<- TaskResult) {
+func workerTask(ctx context.Context, id int, jobsCh <-chan ServerTarget, resultsCh chan<- TaskResult, logger *slog.Logger) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -81,6 +99,11 @@ func workerTask(ctx context.Context, id int, jobsCh <-chan ServerTarget, results
 			if !ok {
 				return
 			}
+
+			logger.Debug("Worker bắt đầu xử lý task",
+				slog.Int("worker_id", id),
+				slog.String("server", server.Name),
+			)
 
 			taskStart := time.Now()
 			cmdCtx, cmdCancel := context.WithTimeout(ctx, 2*time.Second)
@@ -107,6 +130,7 @@ func workerTask(ctx context.Context, id int, jobsCh <-chan ServerTarget, results
 			if err != nil {
 				result.Error = err.Error()
 			}
+
 			resultsCh <- result
 		}
 	}
