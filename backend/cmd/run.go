@@ -52,9 +52,9 @@ var runCmd = &cobra.Command{
 		fmt.Println("\n📊 --- KẾT QUẢ THỰC THI WORKFLOWS ---")
 		for _, res := range results {
 			if res.Success {
-				fmt.Printf("✅ [SUCCESS] Task ID: %d | Name: %s\nOutput:\n%s\n", res.TaskID, res.Name, res.Output)
+				fmt.Printf("✅ [SUCCESS] Task ID: %s | Name: %s\nOutput:\n%s\n", res.TaskID, res.Name, res.Output)
 			} else {
-				fmt.Printf("❌ [FAILED] Task ID: %d | Name: %s | Error: %v\n", res.TaskID, res.Name, res.Error)
+				fmt.Printf("❌ [FAILED] Task ID: %s | Name: %s | Error: %v\n", res.TaskID, res.Name, res.Error)
 			}
 		}
 	},
