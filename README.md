@@ -1,4 +1,5 @@
 # autoops-hubAutoOps Hub
+![AutoOps Hub CI](https://github.com/boadang/autoops-hub/actions/workflows/ci.yml/badge.svg)
 
 AutoOps Hub is a lightweight, concurrent system automation and infrastructure monitoring tool written in Go. Built with a focus on Clean Architecture, memory safety, and practical engineering principles, it enables parallel execution of system verification tasks while maintaining a reliable SQLite audit trail.
 
